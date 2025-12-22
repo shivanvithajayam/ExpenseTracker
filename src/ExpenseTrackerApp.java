@@ -11,20 +11,24 @@ import javafx.stage.*;
 import java.io.*;
 import java.nio.file.*;
 import java.time.LocalDate;
+import java.time.temporal.WeekFields;
 import java.util.*;
 
 public class ExpenseTrackerApp extends Application {
 
+    // ---------------- DATA ----------------
     private final ObservableList<Transaction> transactions =
             FXCollections.observableArrayList();
 
     private final ObservableList<String> categories =
             FXCollections.observableArrayList(
                     "Food", "Education", "Transport",
-                    "Shopping", "Bills", "General");
+                    "Shopping", "Bills", "General"
+            );
 
     private final Map<String, String> categoryMemory = new HashMap<>();
 
+    // ---------------- UI ----------------
     private Label balanceLabel;
     private TableView<Transaction> table;
     private TextField amountField, noteField, budgetField;
@@ -33,8 +37,9 @@ public class ExpenseTrackerApp extends Application {
     private ToggleGroup typeGroup;
     private ToggleGroup methodGroup;
 
+    // ---------------- STATE ----------------
     private double balance = 0.0;
-    private boolean budgetSet = false;   // 🔥 KEY FIX
+    private boolean budgetSet = false;
 
     @Override
     public void start(Stage stage) {
@@ -53,7 +58,7 @@ public class ExpenseTrackerApp extends Application {
         stage.show();
     }
 
-    // ---------------- UI ----------------
+    // ================= UI =================
 
     private HBox createBudgetBox() {
 
@@ -66,7 +71,7 @@ public class ExpenseTrackerApp extends Application {
                 budgetSet = true;
                 updateBalance();
             } catch (Exception ex) {
-                alert("Invalid Budget", "Please enter a valid number.");
+                alert("Invalid Budget", "Enter a valid number.");
             }
         });
 
@@ -99,7 +104,6 @@ public class ExpenseTrackerApp extends Application {
                 column("Amount", "amount", 100),
                 column("Note", "note", 200)
         );
-
         return tv;
     }
 
@@ -109,25 +113,29 @@ public class ExpenseTrackerApp extends Application {
 
         categoryCombo = new ComboBox<>(categories);
         categoryCombo.setEditable(true);
-        categoryCombo.getSelectionModel().selectFirst();
+        categoryCombo.getEditor().setPromptText("Type category");
+        categoryCombo.setValue("General");
 
         amountField = new TextField();
         noteField = new TextField();
 
+        // ---- TYPE ----
         RadioButton debit = new RadioButton("Debit");
         RadioButton credit = new RadioButton("Credit");
-
         typeGroup = new ToggleGroup();
         debit.setToggleGroup(typeGroup);
         credit.setToggleGroup(typeGroup);
         debit.setSelected(true);
 
+        // ---- METHOD (FIXED) ----
         ToggleButton cash = new ToggleButton("Cash");
         ToggleButton upi = new ToggleButton("UPI");
-
         methodGroup = new ToggleGroup();
+
         cash.setToggleGroup(methodGroup);
         upi.setToggleGroup(methodGroup);
+
+        // 🔒 Force one always selected
         cash.setSelected(true);
 
         Button add = new Button("Add Transaction");
@@ -162,40 +170,56 @@ public class ExpenseTrackerApp extends Application {
         return h;
     }
 
-    // ---------------- LOGIC ----------------
+    // ================= LOGIC =================
 
     private void addManualTransaction() {
 
         if (!budgetSet) {
-            alert("Budget Not Set",
-                    "Please set initial budget before adding transactions.");
+            alert("Budget Not Set", "Please set budget first.");
             return;
         }
 
-        double amt = Double.parseDouble(amountField.getText());
+        LocalDate date = datePicker.getValue();
+        if (date == null) {
+            alert("Invalid Date", "Select a valid date.");
+            return;
+        }
+
+        double amt;
+        try {
+            amt = Double.parseDouble(amountField.getText());
+        } catch (Exception e) {
+            alert("Invalid Amount", "Enter valid amount.");
+            return;
+        }
+
         String type =
                 ((RadioButton) typeGroup.getSelectedToggle()).getText();
-        String method =
-                ((ToggleButton) methodGroup.getSelectedToggle()).getText();
+
+        // ✅ SAFE METHOD FETCH
+        Toggle selectedMethod = methodGroup.getSelectedToggle();
+        if (selectedMethod == null) {
+            alert("Payment Method", "Select Cash or UPI.");
+            return;
+        }
+        String method = ((ToggleButton) selectedMethod).getText();
+
         String cat = categoryCombo.getEditor().getText();
+        if (cat == null || cat.isBlank()) cat = "General";
+        if (!categories.contains(cat)) categories.add(cat);
 
-        Transaction t = new Transaction(
-                LocalDate.now(),
-                cat,
-                type,
-                method,
-                amt,
-                noteField.getText()
-        );
+        apply(new Transaction(
+                date, cat, type, method, amt, noteField.getText()
+        ));
 
-        apply(t);
+        amountField.clear();
+        noteField.clear();
     }
 
     private void importCSV() {
 
         if (!budgetSet) {
-            alert("Budget Not Set",
-                    "Please set initial budget before importing CSV.");
+            alert("Budget Not Set", "Set budget first.");
             return;
         }
 
@@ -211,155 +235,138 @@ public class ExpenseTrackerApp extends Application {
             List<String> lines = Files.readAllLines(file.toPath());
 
             for (int i = 1; i < lines.size(); i++) {
-
                 String[] p = lines.get(i).split(",");
-
                 LocalDate date = LocalDate.parse(p[0]);
                 String name = p[1];
                 double amt = Double.parseDouble(p[2]);
                 String type = p[3];
 
                 String cat = categoryMemory.get(name);
-
-                // 🔥 ASK CATEGORY IF NOT MEMORIZED
                 if (cat == null) {
-                    TextInputDialog d =
-                            new TextInputDialog("General");
+                    TextInputDialog d = new TextInputDialog("General");
                     d.setHeaderText("Category for: " + name);
                     cat = d.showAndWait().orElse("General");
                     categoryMemory.put(name, cat);
                 }
 
-                apply(new Transaction(
-                        date,
-                        cat,
-                        type,
-                        "UPI",
-                        amt,
-                        name
-                ));
-            }
+                if (!categories.contains(cat)) categories.add(cat);
 
+                apply(new Transaction(date, cat, type, "UPI", amt, name));
+            }
         } catch (Exception ex) {
             alert("CSV Error", ex.getMessage());
         }
     }
 
     private void apply(Transaction t) {
-
         transactions.add(t);
-
-        if (t.type.equals("Credit")) {
-            balance += t.amount;
-        } else {
-            balance -= t.amount;
-        }
-
+        balance += t.type.equals("Credit") ? t.amount : -t.amount;
         updateBalance();
     }
 
     private void updateBalance() {
-        balanceLabel.setText(
-                String.format("Balance: %.2f", balance)
-        );
+        balanceLabel.setText(String.format("Balance: %.2f", balance));
     }
 
-    // ---------------- DASHBOARD ----------------
+    // ================= DASHBOARD =================
 
     private void openDashboard() {
 
         Map<String, Double> categorySum = new HashMap<>();
-        Map<String, Double> dateSum = new HashMap<>();
-
         for (Transaction t : transactions) {
             if (t.type.equals("Debit")) {
                 categorySum.put(
                         t.category,
-                        categorySum.getOrDefault(t.category, 0.0)
-                                + t.amount
-                );
-                dateSum.put(
-                        t.date.toString(),
-                        dateSum.getOrDefault(t.date.toString(), 0.0)
-                                + t.amount
+                        categorySum.getOrDefault(t.category, 0.0) + t.amount
                 );
             }
         }
 
-        ObservableList<PieChart.Data> pieData =
-                FXCollections.observableArrayList();
+        PieChart pie = new PieChart();
+        categorySum.forEach((k, v) ->
+                pie.getData().add(new PieChart.Data(k, v))
+        );
+        pie.setTitle("Expenses by Category");
 
-        for (String c : categorySum.keySet()) {
-            pieData.add(new PieChart.Data(c, categorySum.get(c)));
-        }
+        CategoryAxis x = new CategoryAxis();
+        NumberAxis y = new NumberAxis();
+        LineChart<String, Number> line =
+                new LineChart<>(x, y);
 
-        PieChart pieChart = new PieChart(pieData);
-        pieChart.setTitle("Expenses by Category");
+        ComboBox<String> filter =
+                new ComboBox<>(FXCollections.observableArrayList(
+                        "Weekly", "Monthly", "Yearly"
+                ));
+        filter.setValue("Monthly");
+        filter.setOnAction(e ->
+                updateLineChart(line, filter.getValue())
+        );
 
-        CategoryAxis xAxis = new CategoryAxis();
-        NumberAxis yAxis = new NumberAxis();
-        BarChart<String, Number> barChart =
-                new BarChart<>(xAxis, yAxis);
+        updateLineChart(line, "Monthly");
 
-        xAxis.setLabel("Date");
-        yAxis.setLabel("Amount");
-        barChart.setTitle("Expenses by Date");
-
-        XYChart.Series<String, Number> series =
-                new XYChart.Series<>();
-        series.setName("Expenses");
-
-        for (String d : dateSum.keySet()) {
-            series.getData().add(
-                    new XYChart.Data<>(d, dateSum.get(d))
-            );
-        }
-
-        barChart.getData().add(series);
-
-        VBox root = new VBox(10, pieChart, barChart);
+        VBox root = new VBox(10, filter, pie, line);
         root.setPadding(new Insets(10));
 
-        Stage stage = new Stage();
-        stage.setTitle("Dashboard");
-        stage.setScene(new Scene(root, 700, 600));
-        stage.show();
+        Stage s = new Stage();
+        s.setTitle("Dashboard");
+        s.setScene(new Scene(root, 750, 700));
+        s.show();
     }
+
+    private void updateLineChart(LineChart<String, Number> chart, String mode) {
+
+        chart.getData().clear();
+        Map<String, Double> map = new TreeMap<>();
+        WeekFields wf = WeekFields.of(Locale.getDefault());
+
+        for (Transaction t : transactions) {
+            if (!t.type.equals("Debit")) continue;
+
+            String key;
+            if (mode.equals("Weekly"))
+                key = "Week " + t.date.get(wf.weekOfWeekBasedYear());
+            else if (mode.equals("Yearly"))
+                key = String.valueOf(t.date.getYear());
+            else
+                key = t.date.getMonth() + " " + t.date.getYear();
+
+            map.put(key, map.getOrDefault(key, 0.0) + t.amount);
+        }
+
+        XYChart.Series<String, Number> s = new XYChart.Series<>();
+        map.forEach((k, v) ->
+                s.getData().add(new XYChart.Data<>(k, v))
+        );
+        chart.getData().add(s);
+    }
+
+    // ================= HELPERS =================
 
     private <T> TableColumn<Transaction, T> column(
             String name, String prop, int w) {
 
-        TableColumn<Transaction, T> c =
-                new TableColumn<>(name);
-        c.setCellValueFactory(
-                new PropertyValueFactory<>(prop));
+        TableColumn<Transaction, T> c = new TableColumn<>(name);
+        c.setCellValueFactory(new PropertyValueFactory<>(prop));
         c.setPrefWidth(w);
         return c;
     }
 
-    private void alert(String title, String msg) {
-        Alert a =
-                new Alert(Alert.AlertType.INFORMATION, msg);
-        a.setTitle(title);
+    private void alert(String t, String m) {
+        Alert a = new Alert(Alert.AlertType.INFORMATION, m);
+        a.setTitle(t);
         a.showAndWait();
     }
 
-    // ---------------- MODEL ----------------
+    // ================= MODEL =================
 
     public static class Transaction {
-
         LocalDate date;
         String category, type, method, note;
         double amount;
 
-        Transaction(
-                LocalDate d,
-                String c,
-                String t,
-                String m,
-                double a,
-                String n
-        ) {
+        Transaction(LocalDate d, String c,
+                    String t, String m,
+                    double a, String n) {
             date = d;
             category = c;
             type = t;
