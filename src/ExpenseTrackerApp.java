@@ -119,7 +119,6 @@ public class ExpenseTrackerApp extends Application {
         amountField = new TextField();
         noteField = new TextField();
 
-        // ---- TYPE ----
         RadioButton debit = new RadioButton("Debit");
         RadioButton credit = new RadioButton("Credit");
         typeGroup = new ToggleGroup();
@@ -127,15 +126,11 @@ public class ExpenseTrackerApp extends Application {
         credit.setToggleGroup(typeGroup);
         debit.setSelected(true);
 
-        // ---- METHOD (FIXED) ----
         ToggleButton cash = new ToggleButton("Cash");
         ToggleButton upi = new ToggleButton("UPI");
         methodGroup = new ToggleGroup();
-
         cash.setToggleGroup(methodGroup);
         upi.setToggleGroup(methodGroup);
-
-        // 🔒 Force one always selected
         cash.setSelected(true);
 
         Button add = new Button("Add Transaction");
@@ -179,12 +174,6 @@ public class ExpenseTrackerApp extends Application {
             return;
         }
 
-        LocalDate date = datePicker.getValue();
-        if (date == null) {
-            alert("Invalid Date", "Select a valid date.");
-            return;
-        }
-
         double amt;
         try {
             amt = Double.parseDouble(amountField.getText());
@@ -196,12 +185,12 @@ public class ExpenseTrackerApp extends Application {
         String type =
                 ((RadioButton) typeGroup.getSelectedToggle()).getText();
 
-        // ✅ SAFE METHOD FETCH
         Toggle selectedMethod = methodGroup.getSelectedToggle();
         if (selectedMethod == null) {
             alert("Payment Method", "Select Cash or UPI.");
             return;
         }
+
         String method = ((ToggleButton) selectedMethod).getText();
 
         String cat = categoryCombo.getEditor().getText();
@@ -209,7 +198,12 @@ public class ExpenseTrackerApp extends Application {
         if (!categories.contains(cat)) categories.add(cat);
 
         apply(new Transaction(
-                date, cat, type, method, amt, noteField.getText()
+                datePicker.getValue(),
+                cat,
+                type,
+                method,
+                amt,
+                noteField.getText()
         ));
 
         amountField.clear();
@@ -250,7 +244,6 @@ public class ExpenseTrackerApp extends Application {
                 }
 
                 if (!categories.contains(cat)) categories.add(cat);
-
                 apply(new Transaction(date, cat, type, "UPI", amt, name));
             }
         } catch (Exception ex) {
@@ -282,16 +275,41 @@ public class ExpenseTrackerApp extends Application {
             }
         }
 
+        // -------- PIE CHART WITH PERCENTAGE --------
         PieChart pie = new PieChart();
-        categorySum.forEach((k, v) ->
-                pie.getData().add(new PieChart.Data(k, v))
-        );
+
+        double total = categorySum.values()
+                .stream()
+                .mapToDouble(Double::doubleValue)
+                .sum();
+
+        for (Map.Entry<String, Double> e : categorySum.entrySet()) {
+
+            PieChart.Data data =
+                    new PieChart.Data(e.getKey(), e.getValue());
+
+            pie.getData().add(data);
+
+            double percent = (e.getValue() / total) * 100;
+
+            Tooltip tip = new Tooltip(
+                    String.format("%s : %.2f%%",
+                            e.getKey(), percent)
+            );
+
+            data.nodeProperty().addListener((obs, oldN, newN) -> {
+                if (newN != null) Tooltip.install(newN, tip);
+            });
+        }
+
         pie.setTitle("Expenses by Category");
 
+        // -------- LINE CHART --------
         CategoryAxis x = new CategoryAxis();
         NumberAxis y = new NumberAxis();
-        LineChart<String, Number> line =
+        LineChart<String, Number> lineChart =
                 new LineChart<>(x, y);
+        lineChart.setLegendVisible(false);
 
         ComboBox<String> filter =
                 new ComboBox<>(FXCollections.observableArrayList(
@@ -299,12 +317,12 @@ public class ExpenseTrackerApp extends Application {
                 ));
         filter.setValue("Monthly");
         filter.setOnAction(e ->
-                updateLineChart(line, filter.getValue())
+                updateLineChart(lineChart, filter.getValue())
         );
 
-        updateLineChart(line, "Monthly");
+        updateLineChart(lineChart, "Monthly");
 
-        VBox root = new VBox(10, filter, pie, line);
+        VBox root = new VBox(10, filter, pie, lineChart);
         root.setPadding(new Insets(10));
 
         Stage s = new Stage();
