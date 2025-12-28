@@ -41,6 +41,7 @@ public class ExpenseTrackerApp extends Application {
     private ToggleGroup methodGroup;
 
     // ---------------- STATE ----------------
+    private double totalbudget = 0;
     private double balance;
     private boolean budgetSet = false;
 
@@ -51,6 +52,8 @@ public class ExpenseTrackerApp extends Application {
         // System.out.println("AFTER DB CONNECTION");
         loadBudgetFromCSV();
         loadTransactionsFromCSV();
+        recalculateBalanceFromTransactions();
+
         filteredTransactions = new FilteredList<>(transactions, p -> true);
         table = createTable();
         table.setItems(filteredTransactions);
@@ -129,7 +132,7 @@ public class ExpenseTrackerApp extends Application {
         try (PrintWriter pw = new PrintWriter(new FileWriter(CSV_PATH))) {
 
             // ✅ Write budget ONCE
-            pw.println("BUDGET," + balance);
+            pw.println("BUDGET," + totalbudget);
 
             // Header
             pw.println("Date,Category,Type,Method,Amount,Note");
@@ -175,13 +178,25 @@ public class ExpenseTrackerApp extends Application {
                         p[5]);
 
                 transactions.add(t);
-                balance += t.type.equals("Credit") ? t.amount : -t.amount;
+
             }
 
             updateBalance();
 
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void recalculateBalanceFromTransactions() {
+        balance = totalbudget;
+
+        for (Transaction t : transactions) {
+            if (t.type.equals("Credit")) {
+                balance += t.amount;
+            } else {
+                balance -= t.amount;
+            }
         }
     }
 
@@ -193,10 +208,11 @@ public class ExpenseTrackerApp extends Application {
 
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
 
-            String line = br.readLine(); // first line
+            String line = br.readLine();
 
             if (line != null && line.startsWith("BUDGET")) {
-                balance = Double.parseDouble(line.split(",")[1]);
+                totalbudget = Double.parseDouble(line.split(",")[1]);
+                balance = totalbudget; // reset balance
                 budgetSet = true;
             }
 
@@ -218,7 +234,7 @@ public class ExpenseTrackerApp extends Application {
         budgetField.setDisable(true); // 🔒 locked by default
 
         // Show last loaded budget
-        budgetField.setText(String.format("%.2f", balance));
+        budgetField.setText(String.format("%.2f", totalbudget));
 
         balanceLabel = new Label("Balance: ₹ " + String.format("%.2f", balance));
         balanceLabel.setStyle("-fx-font-size:14px; -fx-font-weight:bold;");
@@ -237,7 +253,10 @@ public class ExpenseTrackerApp extends Application {
         // 💾 Save budget
         saveBudgetBtn.setOnAction(e -> {
             try {
-                balance = Double.parseDouble(budgetField.getText());
+                totalbudget = Double.parseDouble(budgetField.getText());
+                balance = totalbudget;
+                budgetSet = true;
+
                 budgetSet = true;
 
                 budgetField.setDisable(true);
