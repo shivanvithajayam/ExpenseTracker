@@ -6,19 +6,17 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.chart.*;
 import javafx.scene.control.*;
+
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.stage.*;
-
 import java.io.*;
 import java.nio.file.*;
 import java.time.LocalDate;
 import java.time.temporal.WeekFields;
 import java.util.*;
-//import Expensetracker.util.DBConnection;
-
 public class ExpenseTrackerApp extends Application {
     private static final String CSV_PATH = "C:\\Users\\shiva\\OneDrive\\Documents\\Desktop\\Expense_tracker_app\\expenses.csv";
 
@@ -47,9 +45,6 @@ public class ExpenseTrackerApp extends Application {
 
     @Override
     public void start(Stage stage) {
-        // System.out.println("START() CALLED");
-        // Expensetracker.util.DBConnection.getConnection();
-        // System.out.println("AFTER DB CONNECTION");
         loadBudgetFromCSV();
         loadTransactionsFromCSV();
         recalculateBalanceFromTransactions();
@@ -73,59 +68,6 @@ public class ExpenseTrackerApp extends Application {
         stage.setTitle("Expense Tracker");
         stage.show();
     }
-
-    /*
-     * private void saveTransactionToDB(Transaction t) {
-     * String sql =
-     * "INSERT INTO transactions(date, category, type, method, amount, note) " +
-     * "VALUES (?, ?, ?, ?, ?, ?)";
-     * 
-     * try (Connection con = Expensetracker.util.DBConnection.getConnection();
-     * PreparedStatement ps = con.prepareStatement(sql)) {
-     * 
-     * ps.setString(1, t.date.toString());
-     * ps.setString(2, t.category);
-     * ps.setString(3, t.type);
-     * ps.setString(4, t.method);
-     * ps.setDouble(5, t.amount);
-     * ps.setString(6, t.note);
-     * 
-     * ps.executeUpdate();
-     * 
-     * } catch (Exception e) {
-     * e.printStackTrace();
-     * }
-     * }
-     */
-
-    // =====================CSV save=====================
-    /*
-     * private void saveBudgetToCSV() {
-     * 
-     * try (PrintWriter pw = new PrintWriter(new FileWriter(CSV_PATH))) {
-     * 
-     * // Write budget first
-     * pw.println("BUDGET," + balance);
-     * 
-     * // Write header
-     * pw.println("Date,Category,Type,Method,Amount,Note");
-     * 
-     * // Write all transactions
-     * for (Transaction t : transactions) {
-     * pw.println(
-     * t.date + "," +
-     * t.category + "," +
-     * t.type + "," +
-     * t.method + "," +
-     * t.amount + "," +
-     * t.note.replace(",", " "));
-     * }
-     * 
-     * } catch (IOException e) {
-     * e.printStackTrace();
-     * }
-     * }
-     */
 
     private void writeCSVFromMemory() {
 
@@ -250,24 +192,31 @@ public class ExpenseTrackerApp extends Application {
             saveBudgetBtn.setDisable(false);
         });
 
-        // 💾 Save budget
+        //  Save budget
         saveBudgetBtn.setOnAction(e -> {
             try {
                 totalbudget = Double.parseDouble(budgetField.getText());
-                balance = totalbudget;
-                budgetSet = true;
 
+                // ✅ Check for negative budget
+                if (totalbudget < 0) {
+                    throw new IllegalArgumentException("Budget cannot be negative");
+                }
+
+                balance = totalbudget;
                 budgetSet = true;
 
                 budgetField.setDisable(true);
                 saveBudgetBtn.setDisable(true);
 
                 updateBalance();
-                writeCSVFromMemory(); // ✅ persist budget
+                writeCSVFromMemory(); //  persist budget
 
-            } catch (Exception ex) {
+            } catch (NumberFormatException ex) {
                 alert("Invalid Budget", "Enter a valid number.");
+            } catch (IllegalArgumentException ex) {
+                alert("Invalid Budget", ex.getMessage()); // shows "Budget cannot be negative"
             }
+
         });
 
         HBox h = new HBox(
@@ -379,31 +328,6 @@ public class ExpenseTrackerApp extends Application {
         // Update CSV permanently
         writeCSVFromMemory();
     }
-
-    /*
-     * private void rewriteCSVFromMemory() {
-     * saveTransactionToCSV(t);
-     * 
-     * try (PrintWriter pw = new PrintWriter(new FileWriter(CSV_PATH))) {
-     * 
-     * // Write header again
-     * pw.println("Date,Category,Type,Method,Amount,Note");
-     * 
-     * for (Transaction t : transactions) {
-     * pw.println(
-     * t.date + "," +
-     * t.category + "," +
-     * t.type + "," +
-     * t.method + "," +
-     * t.amount + "," +
-     * t.note.replace(",", " "));
-     * }
-     * 
-     * } catch (IOException e) {
-     * e.printStackTrace();
-     * }
-     * }
-     */
 
     // =========filter=====================
     private FilteredList<Transaction> filteredTransactions;
@@ -626,43 +550,9 @@ public class ExpenseTrackerApp extends Application {
                 ? t.amount
                 : -t.amount;
 
-        writeCSVFromMemory(); // ✅ ONE SOURCE OF TRUTH
+        writeCSVFromMemory(); // ONE SOURCE OF TRUTH
         updateBalance();
     }
-
-    /*
-     * private void loadTransactionsFromDB() {
-     * 
-     * transactions.clear();
-     * 
-     * String sql = "SELECT * FROM transactions";
-     * 
-     * try (Connection con = Expensetracker.util.DBConnection.getConnection();
-     * PreparedStatement ps = con.prepareStatement(sql);
-     * ResultSet rs = ps.executeQuery()) {
-     * 
-     * while (rs.next()) {
-     * Transaction t = new Transaction(
-     * LocalDate.parse(rs.getString("date")),
-     * rs.getString("category"),
-     * rs.getString("type"),
-     * rs.getString("method"),
-     * rs.getDouble("amount"),
-     * rs.getString("note"));
-     * 
-     * transactions.add(t);
-     * balance += t.type.equals("Credit")
-     * ? t.amount
-     * : -t.amount;
-     * }
-     * 
-     * updateBalance();
-     * 
-     * } catch (Exception e) {
-     * e.printStackTrace();
-     * }
-     * }
-     */
 
     private void updateBalance() {
         balanceLabel.setText(String.format("Balance: %.2f", balance));
@@ -887,3 +777,8 @@ public class ExpenseTrackerApp extends Application {
         }
     }
 }
+// javac --module-path "C:\Program Files\Java\javafx-sdk-17.0.17\lib"
+// --add-modules javafx.controls,javafx.fxml -d bin src\ExpenseTrackerApp.java
+// java --module-path "C:\Program
+// Files\Java\javafx-sdk-17.0.17\lib"--add-modules javafx.controls,javafx.fxml
+// -cp bin ExpenseTrackerApp
